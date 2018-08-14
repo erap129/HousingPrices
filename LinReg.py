@@ -72,6 +72,7 @@ def functional_model():
     model = Model(inputs=inputs, outputs=prediction)
     model.compile(loss='mean_squared_error', optimizer='adam')
     plot_model(model, to_file='model_plot_functional.png', show_shapes=True, show_layer_names=True)
+    print(model.summary())
     return model
 
 def functional_model_skipconnection():
@@ -121,18 +122,29 @@ skip_model.fit(X_train, Y_train, epochs=1000, verbose=0)
 y_pred = skip_model.predict(X_test)
 mse = sklearn.metrics.mean_squared_error(Y_test, Y_pred)
 print('mse for functional model:', mse)
-print('weights for functional model:', skip_model.layers[2].get_weights())
+print('weights for final layer of functional model:', skip_model.layers[2].get_weights())
 
 layers = [l for l in skip_model.layers]
+for l in layers:
+    l.trainable = False
 z = merge([layers[0].output, layers[1].output], mode='concat')
-prediction = layers[2].input(z)
-model = Model(inputs=layers[0], outputs=prediction)
+prediction = Dense(1)
+# to_extend = [numpy.random.normal(0, 0.1, 1) for i in range(13)]
+to_extend = [[0] for i in range(13)]
+print('to extend:', to_extend)
+prediction_weights = numpy.concatenate((skip_model.layers[2].get_weights()[0], to_extend), axis=0)
+print('prediction weights:', prediction_weights)
+prediction.set_weights(prediction_weights)
+prediction_set = prediction(z)
+model = Model(inputs=layers[0].input, outputs=prediction_set)
+model.compile(loss='mean_squared_error', optimizer='adam')
+print(model.summary())
 
-
-
-skip_model = functional_model_skipconnection()
-skip_model.fit(X_train, Y_train, epochs=1000, verbose=0)
-y_pred = skip_model.predict(X_test)
+model.fit(X_train, Y_train, epochs=1000, verbose=0)
+y_pred = model.predict(X_test)
 mse = sklearn.metrics.mean_squared_error(Y_test, Y_pred)
 print('mse for skip model:', mse)
+print('weights for final layer of skip model:', model.layers[3].get_weights())
+
+assert((model.layers[1].get_weights() == skip_model.layers[1].get_weights()).all())
 
