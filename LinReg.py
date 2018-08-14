@@ -83,6 +83,7 @@ def functional_model_skipconnection():
     model = Model(inputs=inputs, outputs=prediction)
     model.compile(loss='mean_squared_error', optimizer='adam')
     plot_model(model, to_file='model_plot_skipconnection.png', show_shapes=True, show_layer_names=True)
+    print(model.summary())
     return model
 
 # seed = 7
@@ -115,8 +116,23 @@ def functional_model_skipconnection():
 # results = cross_val_score(pipeline, X, Y, cv=kfold)
 # print("Standardized Functional skip connection: %.2f (%.2f) MSE" % (results.mean(), results.std()))
 
+skip_model = functional_model()
+skip_model.fit(X_train, Y_train, epochs=1000, verbose=0)
+y_pred = skip_model.predict(X_test)
+mse = sklearn.metrics.mean_squared_error(Y_test, Y_pred)
+print('mse for functional model:', mse)
+print('weights for functional model:', skip_model.layers[2].get_weights())
+
+layers = [l for l in skip_model.layers]
+z = merge([layers[0].output, layers[1].output], mode='concat')
+prediction = layers[2].input(z)
+model = Model(inputs=layers[0], outputs=prediction)
+
+
+
 skip_model = functional_model_skipconnection()
-skip_model.fit(X_train, Y_train, epochs=1000)
+skip_model.fit(X_train, Y_train, epochs=1000, verbose=0)
 y_pred = skip_model.predict(X_test)
 mse = sklearn.metrics.mean_squared_error(Y_test, Y_pred)
 print('mse for skip model:', mse)
+
