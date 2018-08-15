@@ -2,21 +2,17 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import sklearn
 from sklearn.model_selection import train_test_split
-import numpy
 from keras.models import Sequential
-from keras.layers import Dense, Input, merge
+from keras.layers import Dense, Input, merge, Concatenate
 from keras.models import Model
-from keras import backend as K
 from keras.utils.vis_utils import plot_model
-from keras.engine.topology import Layer
 import seaborn as sns
+import numpy as np
 import os
 os.environ["PATH"] += os.pathsep + 'C:/Program Files (x86)/Graphviz2.38/bin/'
 sns.set_style("whitegrid")
 sns.set_context("poster")
 
-# special matplotlib argument for improved plots
-from matplotlib import rcParams
 from sklearn.datasets import load_boston
 boston = load_boston()
 
@@ -24,7 +20,6 @@ print(boston.keys())
 bos = pd.DataFrame(boston.data)
 bos.columns = boston.feature_names
 bos['PRICE'] = boston.target
-print(bos.head())
 
 X = bos.drop('PRICE', axis = 1)
 Y = bos['PRICE']
@@ -51,25 +46,6 @@ mse = sklearn.metrics.mean_squared_error(Y_test, Y_pred)
 print('mse for linear regression:', mse)
 
 
-class MyLayer(Layer):
-    def __init__(self, output_dim, **kwargs):
-        self.output_dim = output_dim
-        super(MyLayer, self).__init__(**kwargs)
-
-    def build(self, input_shape):
-        self.kernel = self.add_weight(name='kernel',
-                                      shape=(input_shape[1], self.output_dim),
-                                      initializer='uniform',
-                                      trainable=True)
-        super(MyLayer, self).build(input_shape)
-
-    def call(self, x):
-        y = K.dot(x, self.kernel)
-        return y
-
-    def compute_output_shape(self, input_shape):
-        return (input_shape[0], self.output_dim)
-
 def baseline_model():
     # create model
     model = Sequential()
@@ -91,6 +67,30 @@ def functional_model():
     print(model.summary())
     return model
 
+def functional_model_only_ten():
+    # create model
+    inputs = Input(shape=(13,))
+    x = Dense(10, activation='relu')(inputs)
+    prediction = Dense(1)(x)
+    model = Model(inputs=inputs, outputs=prediction)
+    model.compile(loss='mean_squared_error', optimizer='adam')
+    plot_model(model, to_file='model_plot_functional.png', show_shapes=True, show_layer_names=True)
+    print(model.summary())
+    return model
+
+def functional_model_split():
+    # create model
+    inputs = Input(shape=(13,))
+    hidden_one = Dense(10, activation='relu')(inputs)
+    hidden_two = Dense(10, activation='relu')(inputs)
+    concat = Concatenate()([hidden_one, hidden_two])
+    prediction = Dense(1)(concat)
+    model = Model(inputs=inputs, outputs=prediction)
+    model.compile(loss='mean_squared_error', optimizer='adam')
+    plot_model(model, to_file='model_plot_functional.png', show_shapes=True, show_layer_names=True)
+    print(model.summary())
+    return model
+
 def functional_model_skipconnection():
     # create model
     inputs = Input(shape=(13,))
@@ -103,65 +103,80 @@ def functional_model_skipconnection():
     print(model.summary())
     return model
 
-# seed = 7
-# numpy.random.seed(seed)
-# estimators = []
-# estimators.append(('standardize', StandardScaler()))
-# estimators.append(('mlp', KerasRegressor(build_fn=baseline_model, epochs=50, batch_size=5, verbose=0)))
-# pipeline = Pipeline(estimators)
-# kfold = KFold(n_splits=10, random_state=seed)
-# results = cross_val_score(pipeline, X, Y, cv=kfold)
-# print("Standardized: %.2f (%.2f) MSE" % (results.mean(), results.std()))
 
-# seed = 7
-# numpy.random.seed(seed)
-# estimators = []
-# estimators.append(('standardize', StandardScaler()))
-# estimators.append(('mlp', KerasRegressor(build_fn=functional_model, epochs=50, batch_size=5, verbose=0)))
-# pipeline = Pipeline(estimators)
-# kfold = KFold(n_splits=10, random_state=seed)
-# results = cross_val_score(pipeline, X, Y, cv=kfold)
-# print("Standardized Functional: %.2f (%.2f) MSE" % (results.mean(), results.std()))
+results = pd.DataFrame(columns=['linReg', 'hidden20', 'hidden20_split', 'hidden10', 'hidden10+10'])
+for i in range(50):
+    row = np.array([])
 
-# seed = 7
-# numpy.random.seed(seed)
-# estimators = []
-# estimators.append(('standardize', StandardScaler()))
-# estimators.append(('mlp', KerasRegressor(build_fn=functional_model_skipconnection(), epochs=50, batch_size=5, verbose=0)))
-# pipeline = Pipeline(estimators)
-# kfold = KFold(n_splits=10, random_state=seed)
-# results = cross_val_score(pipeline, X, Y, cv=kfold)
-# print("Standardized Functional skip connection: %.2f (%.2f) MSE" % (results.mean(), results.std()))
+    lm = LinearRegression()
+    lm.fit(X_train, Y_train)
+    Y_pred = lm.predict(X_test)
+    mse = sklearn.metrics.mean_squared_error(Y_test, Y_pred)
+    row = np.append(row, mse)
+    print('mse for linear regression:', mse)
 
-skip_model = functional_model()
-skip_model.fit(X_train, Y_train, epochs=1000, verbose=0)
-y_pred = skip_model.predict(X_test)
-mse = sklearn.metrics.mean_squared_error(Y_test, Y_pred)
-print('mse for functional model:', mse)
-print('weights for final layer of functional model:', skip_model.layers[2].get_weights())
+    func_model = functional_model()
+    func_model.fit(X_train, Y_train, epochs=1000, verbose=0)
+    Y_pred = func_model.predict(X_test)
+    mse = sklearn.metrics.mean_squared_error(Y_test, Y_pred)
+    row = np.append(row, mse)
+    print('mse for functional model:', mse)
+    # print('weights for final layer of functional model:', func_model.layers[2].get_weights())
 
-layers = [l for l in skip_model.layers]
-for l in layers:
-    l.trainable = False
-z = merge([layers[0].output, layers[1].output], mode='concat')
-# to_extend = [numpy.random.normal(0, 0.1, 1) for i in range(13)]
-to_extend = [[0] for i in range(13)]
-print('to extend:', to_extend)
-prediction_weights = numpy.concatenate((skip_model.layers[2].get_weights()[0], to_extend), axis=0)
-prediction_bias = numpy.array([0])
-print('prediction weights:', prediction_weights)
-prediction_set = MyLayer(1, weights=numpy.array([prediction_weights, prediction_bias]))(z)
-model = Model(inputs=layers[0].input, outputs=prediction_set)
-model.compile(loss='mean_squared_error', optimizer='adam')
-print(model.summary())
-print('final layer weights:', model.layers[3].get_weights())
-# model.layers[3].set_weights(prediction_weights)
+    split_model = functional_model_split()
+    split_model.fit(X_train, Y_train, epochs=1000, verbose=0)
+    Y_pred = split_model.predict(X_test)
+    mse = sklearn.metrics.mean_squared_error(Y_test, Y_pred)
+    row = np.append(row, mse)
+    print('mse for split model:', mse)
 
-model.fit(X_train, Y_train, epochs=1000, verbose=0)
-y_pred = model.predict(X_test)
-mse = sklearn.metrics.mean_squared_error(Y_test, Y_pred)
-print('mse for skip model:', mse)
-print('weights for final layer of skip model:', model.layers[3].get_weights())
+    func_model_only_ten = functional_model_only_ten()
+    func_model_only_ten.fit(X_train, Y_train, epochs=1000, verbose=0)
+    Y_pred = func_model_only_ten.predict(X_test)
+    mse = sklearn.metrics.mean_squared_error(Y_test, Y_pred)
+    row = np.append(row, mse)
+    print('mse for functional model only ten:', mse)
 
-assert(model.layers[1].get_weights().all() == skip_model.layers[1].get_weights().all())
+    layers = [l for l in func_model_only_ten.layers]
+    for l in layers:
+        l.trainable = False
+    added_hidden = Dense(10, activation='relu')(layers[0].output)
+    concat = Concatenate()([layers[1].output, added_hidden])
+    prediction = Dense(1)(concat)
+    added_model = Model(inputs=layers[0].output, outputs=prediction)
+    added_model.compile(loss='mean_squared_error', optimizer='adam')
+    plot_model(added_model, to_file='model_plot_added_hidden.png', show_shapes=True, show_layer_names=True)
+    print(added_model.summary())
+    added_model.fit(X_train, Y_train, epochs=1000, verbose=0)
+    print(added_model.layers[1].get_weights()[0] ==
+           func_model_only_ten.layers[1].get_weights()[0])
+    Y_pred = added_model.predict(X_test)
+    mse = sklearn.metrics.mean_squared_error(Y_test, Y_pred)
+    row = np.append(row, mse)
+    print('mse for added model:', mse)
+    results.loc[i] = row
+
+results.to_csv('out.csv')
+
+# z = merge([layers[0].output, layers[1].output], mode='concat')
+# # to_extend = [numpy.random.normal(0, 0.1, 1) for i in range(13)]
+# to_extend = [[0] for i in range(13)]
+# print('to extend:', to_extend)
+# prediction_weights = numpy.concatenate((skip_model.layers[2].get_weights()[0], to_extend), axis=0)
+# prediction_bias = numpy.array([0])
+# print('prediction weights:', prediction_weights)
+# prediction_set = MyLayer(1, weights=numpy.array([prediction_weights, prediction_bias]))(z)
+# model = Model(inputs=layers[0].input, outputs=prediction_set)
+# model.compile(loss='mean_squared_error', optimizer='adam')
+# print(model.summary())
+# print('final layer weights:', model.layers[3].get_weights())
+# # model.layers[3].set_weights(prediction_weights)
+#
+# model.fit(X_train, Y_train, epochs=1000, verbose=0)
+# y_pred = model.predict(X_test)
+# mse = sklearn.metrics.mean_squared_error(Y_test, Y_pred)
+# print('mse for skip model:', mse)
+# print('weights for final layer of skip model:', model.layers[3].get_weights())
+#
+# assert(model.layers[1].get_weights().all() == skip_model.layers[1].get_weights().all())
 
