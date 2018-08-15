@@ -6,12 +6,9 @@ import numpy
 from keras.models import Sequential
 from keras.layers import Dense, Input, merge
 from keras.models import Model
+from keras import backend as K
 from keras.utils.vis_utils import plot_model
-from keras.wrappers.scikit_learn import KerasRegressor
-from sklearn.model_selection import cross_val_score
-from sklearn.model_selection import KFold
-from sklearn.preprocessing import StandardScaler
-from sklearn.pipeline import Pipeline
+from keras.engine.topology import Layer
 import seaborn as sns
 import os
 os.environ["PATH"] += os.pathsep + 'C:/Program Files (x86)/Graphviz2.38/bin/'
@@ -53,6 +50,25 @@ plt.show()
 mse = sklearn.metrics.mean_squared_error(Y_test, Y_pred)
 print('mse for linear regression:', mse)
 
+
+class MyLayer(Layer):
+    def __init__(self, output_dim, **kwargs):
+        self.output_dim = output_dim
+        super(MyLayer, self).__init__(**kwargs)
+
+    def build(self, input_shape):
+        self.kernel = self.add_weight(name='kernel',
+                                      shape=(input_shape[1], self.output_dim),
+                                      initializer='uniform',
+                                      trainable=True)
+        super(MyLayer, self).build(input_shape)
+
+    def call(self, x):
+        y = K.dot(x, self.kernel)
+        return y
+
+    def compute_output_shape(self, input_shape):
+        return (input_shape[0], self.output_dim)
 
 def baseline_model():
     # create model
@@ -128,17 +144,18 @@ layers = [l for l in skip_model.layers]
 for l in layers:
     l.trainable = False
 z = merge([layers[0].output, layers[1].output], mode='concat')
-prediction = Dense(1)
 # to_extend = [numpy.random.normal(0, 0.1, 1) for i in range(13)]
 to_extend = [[0] for i in range(13)]
 print('to extend:', to_extend)
 prediction_weights = numpy.concatenate((skip_model.layers[2].get_weights()[0], to_extend), axis=0)
+prediction_bias = numpy.array([0])
 print('prediction weights:', prediction_weights)
-prediction.set_weights(prediction_weights)
-prediction_set = prediction(z)
+prediction_set = MyLayer(1, weights=numpy.array([prediction_weights, prediction_bias]))(z)
 model = Model(inputs=layers[0].input, outputs=prediction_set)
 model.compile(loss='mean_squared_error', optimizer='adam')
 print(model.summary())
+print('final layer weights:', model.layers[3].get_weights())
+# model.layers[3].set_weights(prediction_weights)
 
 model.fit(X_train, Y_train, epochs=1000, verbose=0)
 y_pred = model.predict(X_test)
@@ -146,5 +163,5 @@ mse = sklearn.metrics.mean_squared_error(Y_test, Y_pred)
 print('mse for skip model:', mse)
 print('weights for final layer of skip model:', model.layers[3].get_weights())
 
-assert((model.layers[1].get_weights() == skip_model.layers[1].get_weights()).all())
+assert(model.layers[1].get_weights().all() == skip_model.layers[1].get_weights().all())
 
